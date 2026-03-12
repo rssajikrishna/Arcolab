@@ -1,0 +1,10 @@
+project_id = "hbfwlvxeywibqmsywqgm"
+
+[functions.analyze-5s]
+verify_jwt = false
+
+[functions.employee-login]
+verify_jwt = false
+
+[functions.save-analysis-log]
+verify_jwt = false
