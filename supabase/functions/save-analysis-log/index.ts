@@ -33,11 +33,16 @@ serve(async (req) => {
       employeeId,
       employeeName,
       department,
+      officeName,
       beforeImage,
       afterImage,
       analysisResult,
       scoringMethod,
       cvMetrics,
+      // Geo metadata from camera capture
+      beforeGeo,
+      afterGeo,
+      capturedAt,
     } = await req.json();
 
     const supabase = createClient(
@@ -95,6 +100,7 @@ serve(async (req) => {
       employee_id: employeeId,
       employee_name: employeeName,
       department: department,
+      office_name: officeName ?? null,
       // Store storage paths instead of raw Base64 (saves DB space)
       before_image: beforeImagePath ?? beforeImage?.slice(0, 500) ?? null,
       after_image: afterImagePath ?? afterImage?.slice(0, 500) ?? null,
@@ -103,6 +109,14 @@ serve(async (req) => {
       analysis_result: analysisResult,
       scoring_method: scoringMethod ?? "gemini-fallback",
       cv_metrics: cvMetrics ?? null,
+      // Geo audit trail
+      before_latitude: beforeGeo?.latitude ?? null,
+      before_longitude: beforeGeo?.longitude ?? null,
+      before_captured_at: beforeGeo?.capturedAt ?? null,
+      after_latitude: afterGeo?.latitude ?? null,
+      after_longitude: afterGeo?.longitude ?? null,
+      after_captured_at: afterGeo?.capturedAt ?? null,
+      captured_at: capturedAt ?? null,
     });
 
     if (error) throw error;

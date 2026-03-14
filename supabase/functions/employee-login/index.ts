@@ -19,13 +19,7 @@ const EMPLOYEES = [
     name: "Naveen SV",
     department: "Operational Excellence",
     password: "ARCOLAB101",
-  },
-  {
-    employeeId: "ARC102",
-    name: "Shalini MK",
-    department: "Technical Team",
-    password: "ARCOLAB102",
-  },
+  }
 ];
 
 serve(async (req) => {

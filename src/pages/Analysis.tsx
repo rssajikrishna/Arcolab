@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import ImageUploader from "@/components/ImageUploader";
+import ImageUploader, { GeoMeta } from "@/components/ImageUploader";
 import AnalysisResults, { AnalysisData } from "@/components/AnalysisResults";
 import { Loader2, Sparkles, User, BadgeCheck, Building2, MapPin, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -59,11 +59,9 @@ const applyWatermark = (raw: string, employeeName: string, employeeId: string, o
     Promise.all([loadArcolabLogo()]).then(([logo]) => {
       const img = new Image();
       img.onload = () => {
-        // Force landscape: always use width >= height
         const cw = img.naturalWidth;
         const ch = img.naturalHeight;
 
-        // Use local date components for consistent display across devices
         const now = new Date();
         const day = String(now.getDate()).padStart(2, "0");
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -75,11 +73,9 @@ const applyWatermark = (raw: string, employeeName: string, employeeId: string, o
         const dateStr = `${day} ${month} ${year}`;
         const timeStr = `${hours}:${mins}:${secs}`;
 
-        // Responsive font size based on image width (min 18, max 32)
         const fontSize = Math.max(18, Math.min(32, Math.round(cw / 25)));
         const padding = Math.round(fontSize * 0.9);
 
-        // Build lines
         const lines: string[] = [
           `${employeeName}  |  ID: ${employeeId}`,
           `Office: ${officeName}`,
@@ -87,27 +83,22 @@ const applyWatermark = (raw: string, employeeName: string, employeeId: string, o
         ];
         if (geoLine) lines.push(geoLine);
 
-        // Calculate strip height FIRST, then extend canvas
         const logoH = Math.round(fontSize * 2.5);
         const logoW = logo.naturalWidth ? Math.round((logo.naturalWidth / logo.naturalHeight) * logoH) : logoH;
         const lineH = fontSize * 1.9;
         const stripH = padding + logoH + padding * 0.8 + lineH * lines.length + padding;
 
-        // Canvas = image + strip BELOW (not overlaid)
         const canvas = document.createElement("canvas");
         canvas.width = cw;
         canvas.height = ch + stripH;
         const ctx = canvas.getContext("2d")!;
 
-        // Draw original image
         ctx.drawImage(img, 0, 0, cw, ch);
 
-        // Dark strip BELOW the image
         const stripY = ch;
         ctx.fillStyle = "#1a1a1a";
         ctx.fillRect(0, stripY, cw, stripH);
 
-        // Draw Arcolab logo centered at top of strip
         ctx.font = `bold ${fontSize}px Arial, sans-serif`;
         if (logo.naturalWidth) {
           const logoX = Math.round((cw - logoW) / 2);
@@ -115,7 +106,6 @@ const applyWatermark = (raw: string, employeeName: string, employeeId: string, o
           ctx.drawImage(logo, logoX, logoY, logoW, logoH);
         }
 
-        // White text, centered below logo
         ctx.fillStyle = "#ffffff";
         ctx.textBaseline = "middle";
         ctx.textAlign = "center";
@@ -140,6 +130,8 @@ const fingerprintImages = (before: string, after: string): string =>
 const Analysis = () => {
   const [beforeImage, setBeforeImage] = useState<string | null>(null);
   const [afterImage, setAfterImage] = useState<string | null>(null);
+  const [beforeGeo, setBeforeGeo] = useState<GeoMeta | null>(null);
+  const [afterGeo, setAfterGeo] = useState<GeoMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<AnalysisData | null>(null);
   const [analysisTimestamp, setAnalysisTimestamp] = useState<string | null>(null);
@@ -151,27 +143,43 @@ const Analysis = () => {
 
   const officeName = office?.name ?? "Unknown Office";
 
-  const handleBeforeImage = useCallback(async (img: string | null) => {
-    if (!img) { setBeforeImage(null); setBeforeUploadTime(null); return; }
-    // Check mandatory geotag for camera images
+  const handleGeoDenied = useCallback(() => {
+    setGeoError("Location access is required for 5S audit compliance. Please enable location permissions and try again.");
+  }, []);
+
+  const handleBeforeImage = useCallback(async (img: string | null, geo?: GeoMeta | null) => {
+    if (!img) {
+      setBeforeImage(null);
+      setBeforeUploadTime(null);
+      setBeforeGeo(null);
+      return;
+    }
+    // Check mandatory geotag for camera images (legacy sentinel)
     if (img.startsWith("__geo_denied__")) {
       setGeoError("Location access required for analysis. Please enable location and try again.");
       return;
     }
     setGeoError(null);
-    setBeforeUploadTime(new Date().toISOString());
+    setBeforeUploadTime(geo?.capturedAt ?? new Date().toISOString());
+    if (geo) setBeforeGeo(geo);
     const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName);
     setBeforeImage(watermarked);
   }, [employee, officeName]);
 
-  const handleAfterImage = useCallback(async (img: string | null) => {
-    if (!img) { setAfterImage(null); setAfterUploadTime(null); return; }
+  const handleAfterImage = useCallback(async (img: string | null, geo?: GeoMeta | null) => {
+    if (!img) {
+      setAfterImage(null);
+      setAfterUploadTime(null);
+      setAfterGeo(null);
+      return;
+    }
     if (img.startsWith("__geo_denied__")) {
       setGeoError("Location access required for analysis. Please enable location and try again.");
       return;
     }
     setGeoError(null);
-    setAfterUploadTime(new Date().toISOString());
+    setAfterUploadTime(geo?.capturedAt ?? new Date().toISOString());
+    if (geo) setAfterGeo(geo);
     const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName);
     setAfterImage(watermarked);
   }, [employee, officeName]);
@@ -186,13 +194,11 @@ const Analysis = () => {
     setResults(null);
 
     try {
-      // Compress images to max 1024px before sending to AI (much faster, less timeout risk)
       const [compBefore, compAfter] = await Promise.all([
         resizeImage(beforeImage, 1024),
         resizeImage(afterImage, 1024),
       ]);
 
-      // Check cache first — same images always return the same result
       const cacheKey = fingerprintImages(compBefore, compAfter);
       const cached = analysisCache.get(cacheKey);
       if (cached) {
@@ -209,28 +215,31 @@ const Analysis = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Store in cache
       analysisCache.set(cacheKey, data);
 
       setResults(data as AnalysisData);
       const ts = new Date().toISOString();
       setAnalysisTimestamp(ts);
 
-      // Save analysis log (fire-and-forget — do not block UI)
+      // Save analysis log with geo metadata (fire-and-forget)
       if (employee) {
         supabase.functions.invoke("save-analysis-log", {
           body: {
             employeeId: employee.employeeId,
             employeeName: employee.name,
             department: employee.department,
+            officeName,
             beforeImage: beforeImage,
             afterImage: afterImage,
             analysisResult: data,
-            // Phase 1: Track which scoring pipeline was used
             scoringMethod: data?.scoringMethod ?? "gemini-fallback",
             cvMetrics: data?.beforeMetrics && data?.afterMetrics
               ? { before: data.beforeMetrics, after: data.afterMetrics }
               : null,
+            // Geo metadata for audit trail
+            beforeGeo: beforeGeo ?? null,
+            afterGeo: afterGeo ?? null,
+            capturedAt: ts,
           },
         }).catch((logErr) => {
           console.error("Failed to save analysis log:", logErr);
@@ -247,6 +256,9 @@ const Analysis = () => {
       setLoading(false);
     }
   };
+
+  // Disable Run button if location has been denied and there are no images already attached
+  const isGeoDenied = !!geoError && !beforeImage && !afterImage;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -295,7 +307,8 @@ const Analysis = () => {
                 5S Workplace Analysis
               </h1>
               <p className="text-muted-foreground max-w-xl mx-auto">
-                Upload before and after images of your workspace. Location is required for geotagging and audit compliance.
+                Upload before and after images of your workspace. Location is required for geotagging
+                and audit compliance.
               </p>
             </div>
 
@@ -310,7 +323,7 @@ const Analysis = () => {
               </div>
             )}
 
-            {/* Geotag info */}
+            {/* Geotag info banner */}
             <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-2.5 mb-6">
               <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
               <p className="text-xs text-muted-foreground">
@@ -327,6 +340,9 @@ const Analysis = () => {
                 image={beforeImage}
                 onImageChange={handleBeforeImage}
                 timestamp={beforeUploadTime}
+                employeeName={employee?.name ?? "Employee"}
+                officeName={officeName}
+                onGeoDenied={handleGeoDenied}
               />
               <ImageUploader
                 label="After"
@@ -335,13 +351,16 @@ const Analysis = () => {
                 image={afterImage}
                 onImageChange={handleAfterImage}
                 timestamp={afterUploadTime}
+                employeeName={employee?.name ?? "Employee"}
+                officeName={officeName}
+                onGeoDenied={handleGeoDenied}
               />
             </div>
 
-            {/* Run button */}
+            {/* Run button — disabled if geo denied and no images yet */}
             <button
               onClick={runAnalysis}
-              disabled={loading || !beforeImage || !afterImage}
+              disabled={loading || !beforeImage || !afterImage || isGeoDenied}
               className="w-full flex items-center justify-center gap-2 rounded-md bg-primary px-6 py-3.5 text-base font-semibold text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed mb-10"
             >
               {loading ? (
