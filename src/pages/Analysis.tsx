@@ -4,6 +4,13 @@ import Footer from "@/components/Footer";
 import ImageUploader, { GeoMeta } from "@/components/ImageUploader";
 import AnalysisResults, { AnalysisData } from "@/components/AnalysisResults";
 import { Loader2, Sparkles, User, BadgeCheck, Building2, MapPin, AlertTriangle } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -41,8 +48,8 @@ const loadArcolabLogo = (): Promise<HTMLImageElement> => {
   });
 };
 
-// Bakes employee name + office + date + time (+ geo) + Arcolab logo as a watermark onto the image via canvas
-const applyWatermark = (raw: string, employeeName: string, employeeId: string, officeName: string): Promise<string> => {
+// Bakes employee name + office + zone + date + time (+ geo) + Arcolab logo as a watermark onto the image via canvas
+const applyWatermark = (raw: string, employeeName: string, employeeId: string, officeName: string, zoneName?: string | null): Promise<string> => {
   // Parse geo prefix if present: "__geo:lat,lng:address__<base64>"
   let geoLine: string | null = null;
   let base64 = raw;
@@ -78,7 +85,7 @@ const applyWatermark = (raw: string, employeeName: string, employeeId: string, o
 
         const lines: string[] = [
           `${employeeName}  |  ID: ${employeeId}`,
-          `Office: ${officeName}`,
+          `Office: ${officeName}${zoneName ? `  |  Zone: ${zoneName}` : ""}`,
           `${dateStr}  ${timeStr}`,
         ];
         if (geoLine) lines.push(geoLine);
@@ -140,6 +147,9 @@ const Analysis = () => {
   const [geoError, setGeoError] = useState<string | null>(null);
   const { toast } = useToast();
   const { employee, office } = useAuth();
+  const [selectedZone, setSelectedZone] = useState<string | null>(null);
+
+  const ZONES = ["Production", "Warehouse", "Quality Control", "Packaging", "Office Area", "Maintenance"];
 
   const officeName = office?.name ?? "Unknown Office";
 
@@ -162,9 +172,9 @@ const Analysis = () => {
     setGeoError(null);
     setBeforeUploadTime(geo?.capturedAt ?? new Date().toISOString());
     if (geo) setBeforeGeo(geo);
-    const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName);
+    const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName, selectedZone);
     setBeforeImage(watermarked);
-  }, [employee, officeName]);
+  }, [employee, officeName, selectedZone]);
 
   const handleAfterImage = useCallback(async (img: string | null, geo?: GeoMeta | null) => {
     if (!img) {
@@ -180,9 +190,9 @@ const Analysis = () => {
     setGeoError(null);
     setAfterUploadTime(geo?.capturedAt ?? new Date().toISOString());
     if (geo) setAfterGeo(geo);
-    const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName);
+    const watermarked = await applyWatermark(img, employee?.name ?? "Employee", employee?.employeeId ?? "", officeName, selectedZone);
     setAfterImage(watermarked);
-  }, [employee, officeName]);
+  }, [employee, officeName, selectedZone]);
 
   const runAnalysis = async () => {
     if (!beforeImage || !afterImage) {
@@ -270,7 +280,7 @@ const Analysis = () => {
             {employee && (
               <div className="bg-card rounded-xl border border-border p-5 mb-8">
                 <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">Session Info</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
                       <User className="h-5 w-5 text-primary" />
@@ -298,6 +308,31 @@ const Analysis = () => {
                       </div>
                     </div>
                   )}
+                  
+                  <div className="flex items-start gap-3 sm:border-l sm:border-border sm:pl-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="flex items-start gap-3 text-left w-full hover:opacity-80 outline-none transition-opacity">
+                          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                            <MapPin className="h-5 w-5 text-primary" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Select Zone</p>
+                            <p className="text-sm font-semibold text-foreground leading-snug">
+                              {selectedZone || "Choose a zone..."}
+                            </p>
+                          </div>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-[200px]">
+                        {ZONES.map((zone) => (
+                          <DropdownMenuItem key={zone} onClick={() => setSelectedZone(zone)}>
+                            {zone}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </div>
             )}

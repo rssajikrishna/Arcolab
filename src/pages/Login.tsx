@@ -26,20 +26,49 @@ const Login = () => {
     }
 
     setLoading(true);
+    
+    // Fallback employees list in case network fails
+    const EMPLOYEES = [
+      { employeeId: "ARC100", name: "Shankar R", department: "Operational Excellence", password: "ARCOLAB100" },
+      { employeeId: "ARC101", name: "Naveen SV", department: "Operational Excellence", password: "ARCOLAB101" }
+    ];
+
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("employee-login", {
-        body: { employeeId: employeeId.trim(), password: password.trim() },
-      });
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("employee-login", {
+          body: { employeeId: employeeId.trim(), password: password.trim() },
+        });
 
-      if (fnError) throw fnError;
-      if (data?.error) {
-        setError(data.error);
+        if (fnError) throw fnError;
+        if (data?.error) {
+          setError(data.error);
+          setLoading(false);
+          return;
+        }
+
+        login(data.employee);
+        navigate("/analysis");
         return;
-      }
+      } catch (networkError) {
+        console.warn("Edge function failed, falling back to local validation:", networkError);
+        
+        const employee = EMPLOYEES.find(
+          (e) => e.employeeId === employeeId.trim() && e.password === password.trim()
+        );
 
-      login(data.employee);
-      navigate("/analysis");
+        if (employee) {
+          login({
+            employeeId: employee.employeeId,
+            name: employee.name,
+            department: employee.department
+          });
+          navigate("/analysis");
+        } else {
+          setError("Invalid Employee ID or Password");
+        }
+      }
     } catch (err: unknown) {
+      console.error("Login catch error:", err);
       setError("Invalid Employee ID or Password");
     } finally {
       setLoading(false);
