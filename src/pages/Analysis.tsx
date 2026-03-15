@@ -377,6 +377,7 @@ const Analysis = () => {
                 timestamp={beforeUploadTime}
                 employeeName={employee?.name ?? "Employee"}
                 officeName={officeName}
+                zoneName={selectedZone || "Unspecified Zone"}
                 onGeoDenied={handleGeoDenied}
               />
               <ImageUploader
@@ -388,6 +389,7 @@ const Analysis = () => {
                 timestamp={afterUploadTime}
                 employeeName={employee?.name ?? "Employee"}
                 officeName={officeName}
+                zoneName={selectedZone || "Unspecified Zone"}
                 onGeoDenied={handleGeoDenied}
               />
             </div>
